@@ -12,3 +12,14 @@ I really enjoyed the interpretation of Ivana Baquero in AltaMar series, so lets 
 
 ![alt text](https://github.com/makiJanus/instagram-lora-tool/blob/main/git_images/instagram_tools.png?raw=true)
 ![alt text](https://github.com/makiJanus/instagram-lora-tool/blob/main/git_images/pre_training_tools.png?raw=true)
+
+## Installing on Windows + AMD Strix Halo
+
+source: https://github.com/Comfy-Org/ComfyUI?tab=readme-ov-file#installing
+
+You can proceed in a similar fashion to the ComfyUI tutorial
+
+> RDNA 3.5 (Strix halo/Ryzen AI Max+ 365):
+```
+pip install --pre torch torchvision torchaudio --index-url https://rocm.nightlies.amd.com/v2/gfx1151/
+```
