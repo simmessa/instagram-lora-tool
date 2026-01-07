@@ -2,9 +2,11 @@ import os
 import instaloader
 import os
 import cv2
+import numpy as np
 from transformers import BlipProcessor, BlipForConditionalGeneration
 import torch
 from PIL import Image
+# import dlib # new face detection, no dll :(
 
 # Functions 
 class tools():
@@ -13,8 +15,13 @@ class tools():
         Initialize the image captioning model.
         """
         # Processor and model variables for the class
-        self.processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-large")
-        self.model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-large", torch_dtype=torch.float16).to("cuda")
+        # cannot use fast because rocM is not supported on windows :(
+        print("Is CUDA enabled?",torch.cuda.is_available(),"\n\n")
+        
+        # self.processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-large")
+        # quicker
+        self.processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-large", use_fast=True)
+        self.model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-large", dtype=torch.float16).to("cuda")
         
     def scrape_instagram_images(self, username, max_images=None):
         """
@@ -92,22 +99,25 @@ class tools():
     def process_images(self, username):
         """
         Process the images in the specified user's folder by detecting faces, cropping around the largest face,
-        and resizing the cropped image.
+        and resizing the cropped image while maintaining aspect ratio.
 
         Args:
             username (str): The username associated with the images.
 
         Returns:
-            None
+            Text output
 
         """
-        # Size trainning size for kohya Kohya
-        new_size = (512,512)
+        # Size training size for kohya Kohya
+        new_size = (512, 512)
         # Folder where the scrapped images are
         input_folder = f"scrapped/{username}"
         # Create the output folder if it doesn't exist
         output_folder = f"scrapped/{username}/cropped_centered"
         os.makedirs(output_folder, exist_ok=True)
+
+        # for output
+        out = ""
 
         # Load the pre-trained face detector from OpenCV
         face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
@@ -122,34 +132,113 @@ class tools():
                 # Convert the image to grayscale for face detection
                 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-                # Detect faces in the image
-                faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
-                
-                # If there are faces in image
-                if len(faces) > 0:
-                    # Get the largest detected face
-                    (x, y, w, h) = max(faces, key=lambda face: face[2] * face[3])
+                # Detect faces in the image with an old method Haar from 2001
+                # faces = face_cascade.detectMultiScale(
+                #     gray,
+                #     scaleFactor=1.1, #1.1
+                #     minNeighbors=5,
+                #     minSize=(60, 60) #30, 30
+                # )
 
+                detector = cv2.FaceDetectorYN.create(
+                    "face_detection_yunet_2023mar.onnx",
+                    "",
+                    (320, 320),
+                    0.9,
+                    0.3,
+                    5000
+                )
+
+                tm = cv2.TickMeter()
+
+                tm.start()
+                ## [inference]
+                # Set input size before inference
+                detector.setInputSize((image.shape[1], image.shape[0]))
+
+                faces = detector.detect(image)
+                ## [inference]
+                tm.stop()
+
+                # If there are faces in image
+                # print(type(faces), len(faces), faces)
+
+                # if len(faces) == 1: #only if one face is detected
+                if faces[1] is not None: #at least one face is detected
+
+                    # get rectangle from detected face
+                    # for (x, y, w, h) in faces[1]:
+                    # for (x, y, w, h) in tuple(faces[1][:4]): #omg
+                    detected = faces[1][0] # get the array with detection data
+                    # print(faces)
+                    (xf, yf, wf, hf) = tuple(detected[:4])
+                    (x, y, w, h) = (int(xf), int(yf), int(wf), int(hf)) #float to int
+                    # print (x, y, w, h)                  
+
+                    # """                    
+                    cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2) # Green color, thickness 2
+                    output_path = os.path.join(output_folder, filename)
+                    print("Face detected in image:", filename)
+                    cv2.imwrite(output_path, image) #SM avoid distortion if not on guitar :D
                     # Calculate the center of the face
                     center_x = x + w // 2
                     center_y = y + h // 2
 
+                    out = out + f"Detected Face center is: {center_x}, {center_y}\n"
+                    # print(out)
+
                     # Calculate the coordinates for cropping the image around the face
-                    half_size = min(image.shape[0], image.shape[0]) // 2
+                    half_size = min(image.shape[0], image.shape[1]) // 2
                     x1 = max(center_x - half_size, 0)
                     y1 = max(center_y - half_size, 0)
                     x2 = min(center_x + half_size, image.shape[1])
                     y2 = min(center_y + half_size, image.shape[0])
 
+                    # Calculate the aspect ratio of the original image
+                    original_ratio = image.shape[1] / image.shape[0]
+                    out = out + f"{image.shape[1]}/{image.shape[0]} | image ratio is: {original_ratio}\n"
+
                     # Crop the image around the face
                     cropped_image = image[y1:y2, x1:x2]
 
-                    # Resize the cropped image
-                    resized_image = cv2.resize(cropped_image, new_size)
+                    # Calculate the aspect ratio of the cropped image
+                    cropped_height, cropped_width = cropped_image.shape[:2]
+                    cropped_ratio = cropped_width / cropped_height
+                    out = out + f"{cropped_width}/{cropped_height} | cropped ratio is: {cropped_ratio}\n"
+
+                    # Calculate dimensions for maintaining aspect ratio within new_size
+                    target_width, target_height = new_size
+                    if cropped_ratio > 1:  # landscape
+                        new_width = target_width
+                        new_height = int(target_width / cropped_ratio)
+                    else:  # portrait or square
+                        new_height = target_height
+                        new_width = int(target_height * cropped_ratio)
+
+                    target_ratio = new_width / new_height
+                    out = out + f"{new_width}/{new_height} | target ratio is: {target_ratio}\n"
+
+                    # Resize the cropped image while maintaining aspect ratio
+                    resized_image = cv2.resize(cropped_image, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
+
+                    # Create a black background image with target size
+                    background = np.zeros((target_height, target_width, 3), dtype=np.uint8)
+
+                    # Calculate position to center the resized image
+                    x_offset = (target_width - new_width) // 2
+                    y_offset = (target_height - new_height) // 2
+
+                    # Place the resized image on the black background
+                    background[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = resized_image
 
                     # Save the processed image to the output folder
-                    output_path = os.path.join(output_folder, filename)
-                    cv2.imwrite(output_path, resized_image)
+                    output_path = os.path.join(output_folder, "crop_" + filename)
+                    cv2.imwrite(output_path, background) #SM avoid distortion if not on guitar :D
+                    # print("Crop and resize: %s, %s" % (filename, original_ratio))
+                    # """
+        #finish with output
+        return(out)
+
 
     def blip_captioning(self, username):
         """

@@ -18,11 +18,13 @@ with gr.Blocks() as demo:
         # Get the list of folders in the specified path
         folder_list = tools_for_gradio.get_folder_list(path)
         # Create a dropdown input component with the folder list
-        folder_dropdown = gr.inputs.Dropdown(choices=folder_list, label="Select Instagram")
+        # SM small bugfix since gradio inputs were deprecated in v4: 
+        folder_dropdown = gr.Dropdown(choices=folder_list, label="Select Instagram")
         # Add the "Resize and Crop" button component
         resize_and_crop_btn = gr.Button("Resize and Crop from folder")
         # Bind cropping function to the button
-        resize_and_crop_btn.click(fn=tools_for_gradio.process_images, inputs=folder_dropdown, outputs=None)
+        box = gr.Textbox(label="Output", lines=20, max_lines=100)
+        resize_and_crop_btn.click(fn=tools_for_gradio.process_images, inputs=folder_dropdown, outputs=box)
     
     with gr.Tab("Pre-training Tools"):
         # Path where the folders are located
@@ -30,7 +32,7 @@ with gr.Blocks() as demo:
         # Get the list of folders in the specified path
         folder_list = tools_for_gradio.get_folder_list(path)
         # Create a dropdown input component with the folder list
-        folder_dropdown = gr.inputs.Dropdown(choices=folder_list, label="Select Instagram")
+        folder_dropdown = gr.Dropdown(choices=folder_list, label="Select Instagram")
         # Buttons ...
         prompting_btn = gr.Button("Prompt images with BLIP from cropped images")
         prompting_btn.click(fn=tools_for_gradio.blip_captioning, inputs=folder_dropdown, outputs=None)
@@ -39,7 +41,7 @@ with gr.Blocks() as demo:
             image_path = gr.State()
             txt_prompt = gr.State()
             image_index = gr.State(value=0)
-            img = gr.Image(input=image_path)
+            img = gr.Image(inputs=image_path)
             promtp = gr.Textbox(label="Generated prompt",value=txt_prompt, interactive=True)
             with gr.Row():
                 checking_previous_btn = gr.Button("Previous Image")
