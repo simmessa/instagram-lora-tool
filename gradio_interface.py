@@ -8,7 +8,7 @@ with gr.Blocks() as demo:
         # Create Instagram username input box
         instagram_username = gr.Textbox(label="Public instagram username")
         # Create slider to set the maximum images to download
-        slider = gr.Slider(minimum=0, maximum=100, value=20)
+        slider = gr.Slider(minimum=0, maximum=1000, value=200)
         # Create button to extract images
         download_images_btn = gr.Button("Download images")
         # Bind scrapping function to the button

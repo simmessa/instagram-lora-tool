@@ -140,6 +140,7 @@ class tools():
                 #     minSize=(60, 60) #30, 30
                 # )
 
+                # Way better face detection with YuNet
                 detector = cv2.FaceDetectorYN.create(
                     "face_detection_yunet_2023mar.onnx",
                     "",
@@ -164,7 +165,7 @@ class tools():
                 # print(type(faces), len(faces), faces)
 
                 # if len(faces) == 1: #only if one face is detected
-                if faces[1] is not None: #at least one face is detected
+                if faces[1] is not None and len(faces[1]) == 1: #exactly one face is detected
 
                     # get rectangle from detected face
                     # for (x, y, w, h) in faces[1]:
@@ -175,11 +176,12 @@ class tools():
                     (x, y, w, h) = (int(xf), int(yf), int(wf), int(hf)) #float to int
                     # print (x, y, w, h)                  
 
-                    # """                    
-                    cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2) # Green color, thickness 2
+                    # """
+                    image_copy = cv2.imread(image_path)
+                    cv2.rectangle(image_copy, (x, y), (x + w, y + h), (0, 255, 0), 2) # Green color, thickness 2
                     output_path = os.path.join(output_folder, filename)
                     print("Face detected in image:", filename)
-                    cv2.imwrite(output_path, image) #SM avoid distortion if not on guitar :D
+                    cv2.imwrite(output_path, image_copy) #SM avoid distortion if not on guitar :D
                     # Calculate the center of the face
                     center_x = x + w // 2
                     center_y = y + h // 2
@@ -221,19 +223,36 @@ class tools():
                     # Resize the cropped image while maintaining aspect ratio
                     resized_image = cv2.resize(cropped_image, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
 
-                    # Create a black background image with target size
-                    background = np.zeros((target_height, target_width, 3), dtype=np.uint8)
+                    # Extract exactly 512x512 portion centered on the face (as requested)
+                    # Calculate the center of the face (already calculated as center_x, center_y)
+                    # Calculate crop boundaries to get 512x512 region centered on face
+                    half_size = 256  # 512/2 = 256
+                    x1 = max(center_x - half_size, 0)
+                    y1 = max(center_y - half_size, 0)
+                    x2 = min(center_x + half_size, image.shape[1])
+                    y2 = min(center_y + half_size, image.shape[0])
+                    
+                    # Extract the 512x512 region centered on the face
+                    final_image = image[y1:y2, x1:x2]
+                    
+                    # If we still don't have a 512x512 image, resize it to that size (last resort)
+                    if final_image.shape[0] != 512 or final_image.shape[1] != 512:
+                        minsize = min(final_image.shape[0], final_image.shape[1])
 
-                    # Calculate position to center the resized image
-                    x_offset = (target_width - new_width) // 2
-                    y_offset = (target_height - new_height) // 2
+                        x3 = max(center_x - int(minsize/2), 0)
+                        y3 = max(center_y - int(minsize/2), 0)
+                        x4 = min(center_x + int(minsize/2), image.shape[1])
+                        y4 = min(center_y + int(minsize/2), image.shape[0])
 
-                    # Place the resized image on the black background
-                    background[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = resized_image
+                        # Extract the 512x512 region centered on the face
+                        final_image = image[y3:y4, x3:x4]
+
+                        # You can resample and still spit out a 512x512 image
+                        final_image = cv2.resize(final_image, (512, 512), interpolation=cv2.INTER_LANCZOS4)
 
                     # Save the processed image to the output folder
-                    output_path = os.path.join(output_folder, "crop_" + filename)
-                    cv2.imwrite(output_path, background) #SM avoid distortion if not on guitar :D
+                    output_path = os.path.join(output_folder, "crop_" + filename + "_q75.webp")
+                    cv2.imwrite(output_path, final_image, [cv2.IMWRITE_WEBP_QUALITY, 75]) #SM avoid distortion if not on guitar :D
                     # print("Crop and resize: %s, %s" % (filename, original_ratio))
                     # """
         #finish with output
@@ -261,7 +280,8 @@ class tools():
         
         # For every image (png or jpg) in input_folder:
         for image_file in os.listdir(input_folder):
-            if image_file.endswith(".png") or image_file.endswith(".jpg"):
+            # if image_file.endswith(".png") or image_file.endswith(".jpg"):
+            if image_file.endswith(".webp"):
                 # Add images files to list of paths varaible
                 input_path = f"scrapped/{username}/cropped_centered"
                 print("input_path: " + input_path)
@@ -445,3 +465,5 @@ class tools():
         with open(selected_txt_path, "w") as txt_file:
             # Create a new file with the caption
             txt_file.write(f"{caption}\n")
+
+    
